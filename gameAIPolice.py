@@ -26,12 +26,11 @@ GRAY2 = (180, 180, 200)
 BG_GRAD1 = (40, 50, 80)
 BG_GRAD2 = (20, 25, 40)
 RED_ALERT = (255, 60, 60)
-ALERT_ALPHA = 120
 
 pygame.init()
 font = pygame.font.SysFont("Segoe UI", 24, bold=True)
 bigfont = pygame.font.SysFont("Segoe UI", 48, bold=True)
-screen = pygame.display.set_mode((N * CELL_SIZE, N * CELL_SIZE + 90))
+screen = pygame.display.set_mode((N * CELL_SIZE, N * CELL_SIZE + 70))
 pygame.display.set_caption("Chor vs Police (Modern UI)")
 
 clock = pygame.time.Clock()
@@ -54,7 +53,8 @@ def draw_gradient_background():
             for i in range(3)
         ]
         pygame.draw.line(screen, color, (0, y), (N * CELL_SIZE, y))
-
+status_font = pygame.font.SysFont("Segoe UI", 20, bold=True)
+end_font = pygame.font.SysFont("Segoe UI", 32, bold=True)
 def draw_board(thief_pos, police_pos, objects, exit_pos, collected, hiding_spots, looted, patrol_mode, alert_pulse):
     draw_gradient_background()
     # Draw grid with rounded cells
@@ -73,21 +73,14 @@ def draw_board(thief_pos, police_pos, objects, exit_pos, collected, hiding_spots
             if (x, y) == exit_pos and collected:
                 screen.blit(img_exit, (x * CELL_SIZE, y * CELL_SIZE))
     # Highlight cells
-    pygame.draw.rect(screen, (0, 200, 255, 80), (thief_pos[0]*CELL_SIZE, thief_pos[1]*CELL_SIZE, CELL_SIZE, CELL_SIZE), 5, border_radius=12)
-    pygame.draw.rect(screen, (255, 80, 80, 80), (police_pos[0]*CELL_SIZE, police_pos[1]*CELL_SIZE, CELL_SIZE, CELL_SIZE), 5, border_radius=12)
+    pygame.draw.rect(screen, (0, 200, 255, 80), (thief_pos[0]*CELL_SIZE, thief_pos[1]*CELL_SIZE, CELL_SIZE, CELL_SIZE), 4, border_radius=12)
+    pygame.draw.rect(screen, (255, 80, 80, 80), (police_pos[0]*CELL_SIZE, police_pos[1]*CELL_SIZE, CELL_SIZE, CELL_SIZE), 4, border_radius=12)
     # Draw thief and police
     screen.blit(img_thief, (thief_pos[0]*CELL_SIZE, thief_pos[1]*CELL_SIZE))
     screen.blit(img_cop, (police_pos[0]*CELL_SIZE, police_pos[1]*CELL_SIZE))
 
-    # --- DARK OVERLAY BEFORE CHORI ---
-    if not patrol_mode:
-        dark_overlay = pygame.Surface((N * CELL_SIZE, N * CELL_SIZE), pygame.SRCALPHA)
-        dark_overlay.fill((0, 0, 0, 120))
-        screen.blit(dark_overlay, (0, 0))
-        suspense = font.render("Steal a loot to trigger the alarm!", True, (220, 220, 220))
-        screen.blit(suspense, (N * CELL_SIZE // 2 - suspense.get_width() // 2, N * CELL_SIZE // 2 - 30))
-    else:
-        # --- RED ALERT EFFECT ---
+    # --- RED ALERT EFFECT (only after first loot) ---
+    if patrol_mode:
         alert_overlay = pygame.Surface((N * CELL_SIZE, N * CELL_SIZE), pygame.SRCALPHA)
         alert_overlay.fill((255, 0, 0, int(40 + 40 * alert_pulse)))
         screen.blit(alert_overlay, (0, 0))
@@ -101,20 +94,21 @@ def draw_board(thief_pos, police_pos, objects, exit_pos, collected, hiding_spots
         screen.blit(alert_text, (N * CELL_SIZE // 2 - alert_text.get_width() // 2, 10 + y_offset))
 
     # --- INFO BAR ---
-    info_bar = pygame.Surface((N * CELL_SIZE, 90), pygame.SRCALPHA)
-    info_bar.fill((30, 30, 40, 220))
+    info_bar = pygame.Surface((N * CELL_SIZE, 70), pygame.SRCALPHA)
+    info_bar.fill((30, 30, 40, 230))
     screen.blit(info_bar, (0, N * CELL_SIZE))
-    # Icons
-    screen.blit(img_loot, (10, N * CELL_SIZE + 10))
+    # Icons and info
+    screen.blit(img_loot, (12, N * CELL_SIZE + 10))
     loot_text = font.render(f"{len(objects) - len(looted)}", True, WHITE)
-    screen.blit(loot_text, (50, N * CELL_SIZE + 18))
+    screen.blit(loot_text, (54, N * CELL_SIZE + 18))
     screen.blit(img_exit, (100, N * CELL_SIZE + 10))
     # Status
     if patrol_mode:
-        status = font.render("Police is chasing you!", True, RED_ALERT)
+        status = status_font.render("Police is chasing you!", True, RED_ALERT)
     else:
-        status = font.render("Police is patrolling...", True, (180, 180, 180))
-    screen.blit(status, (160, N * CELL_SIZE + 25))
+        status = status_font.render("Police is patrolling...", True, (180, 180, 180))
+    # Center status
+    screen.blit(status, (N * CELL_SIZE // 2 - status.get_width() // 2, N * CELL_SIZE + 40))
 
 def random_empty_cell(exclude):
     while True:
@@ -161,11 +155,20 @@ def police_ai(police_pos, thief_pos, patrol_mode, patrol_path, looted, objects):
             return police_pos, path
 
 def show_message(msg, color):
-    overlay = pygame.Surface((N * CELL_SIZE, N * CELL_SIZE + 90), pygame.SRCALPHA)
+    # overlay = pygame.Surface((N * CELL_SIZE, N * CELL_SIZE + 70), pygame.SRCALPHA)
+    # overlay.fill((0, 0, 0, 220))
+    # screen.blit(overlay, (0, 0))
+    # text = bigfont.render(msg, True, color)
+    # screen.blit(text, (N * CELL_SIZE // 2 - text.get_width() // 2, N * CELL_SIZE // 2 - 24))
+    # pygame.display.flip()
+    # pygame.time.wait(2000)
+
+    overlay = pygame.Surface((N * CELL_SIZE, N * CELL_SIZE + 70), pygame.SRCALPHA)
     overlay.fill((0, 0, 0, 220))
     screen.blit(overlay, (0, 0))
-    text = bigfont.render(msg, True, color)
-    screen.blit(text, (N * CELL_SIZE // 2 - text.get_width() // 2, N * CELL_SIZE // 2 - 24))
+    # ছোট ফন্ট ব্যবহার করুন
+    text = end_font.render(msg, True, color)
+    screen.blit(text, (N * CELL_SIZE // 2 - text.get_width() // 2, N * CELL_SIZE // 2 - text.get_height() // 2))
     pygame.display.flip()
     pygame.time.wait(2000)
 
