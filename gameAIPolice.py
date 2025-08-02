@@ -4,10 +4,12 @@ import heapq
 import sys
 import math
 
+
+
 # --- CONFIGURABLE PARAMETERS ---
 N = 8  # Board size
 NUM_OBJECTS = 5
-NUM_HIDING_SPOTS = 2
+NUM_alarm_trap = 8
 CELL_SIZE = 64
 FPS = 30
 
@@ -16,7 +18,7 @@ IMG_COP = "cop.png"
 IMG_THIEF = "thief.png"
 IMG_LOOT = "loot.png"
 IMG_EXIT = "exit.png"
-IMG_HIDE = "hide.png"
+IMG_TRAP = "trap.png"
 
 # --- COLORS ---
 WHITE = (255, 255, 255)
@@ -28,6 +30,26 @@ BG_GRAD2 = (20, 25, 40)
 RED_ALERT = (255, 60, 60)
 
 pygame.init()
+
+pygame.mixer.init()
+pygame.mixer.music.set_volume(0.5)
+
+# Music Tracks
+calm_bgm = "calm_bgm.mp3"
+alert_bgm = "alert_bgm.mp3"
+
+# Sound Effects
+alert_sfx = pygame.mixer.Sound("alert_sfx.mp3")
+loot_sfx = pygame.mixer.Sound("loot_sfx.mp3")
+win_sfx = pygame.mixer.Sound("win_sfx.mp3")
+lose_sfx = pygame.mixer.Sound("lose_sfx.mp3")
+
+alert_sfx.set_volume(0.7)
+loot_sfx.set_volume(0.6)
+win_sfx.set_volume(0.7)
+lose_sfx.set_volume(0.7)
+
+
 font = pygame.font.SysFont("Segoe UI", 24, bold=True)
 bigfont = pygame.font.SysFont("Segoe UI", 48, bold=True)
 screen = pygame.display.set_mode((N * CELL_SIZE, N * CELL_SIZE + 70))
@@ -40,11 +62,15 @@ def load_and_scale(filename):
     img = pygame.image.load(filename).convert_alpha()
     return pygame.transform.smoothscale(img, (CELL_SIZE, CELL_SIZE))
 
+def play_music(track, loop=True):
+    pygame.mixer.music.load(track)
+    pygame.mixer.music.play(-1 if loop else 0)
+
 img_cop = load_and_scale(IMG_COP)
 img_thief = load_and_scale(IMG_THIEF)
 img_loot = load_and_scale(IMG_LOOT)
 img_exit = load_and_scale(IMG_EXIT)
-img_hide = load_and_scale(IMG_HIDE)
+img_TRAP = load_and_scale(IMG_TRAP)
 
 def draw_gradient_background():
     for y in range(N * CELL_SIZE):
@@ -55,7 +81,7 @@ def draw_gradient_background():
         pygame.draw.line(screen, color, (0, y), (N * CELL_SIZE, y))
 status_font = pygame.font.SysFont("Segoe UI", 20, bold=True)
 end_font = pygame.font.SysFont("Segoe UI", 32, bold=True)
-def draw_board(thief_pos, police_pos, objects, exit_pos, collected, hiding_spots, looted, patrol_mode, alert_pulse):
+def draw_board(thief_pos, police_pos, objects, exit_pos, collected, alarm_trap, looted, patrol_mode, alert_pulse):
     draw_gradient_background()
     # Draw grid with rounded cells
     for y in range(N):
@@ -64,11 +90,17 @@ def draw_board(thief_pos, police_pos, objects, exit_pos, collected, hiding_spots
             color = GRAY1 if (x + y) % 2 == 0 else GRAY2
             pygame.draw.rect(screen, color, rect, border_radius=16)
             # Hiding spot
-            if (x, y) in hiding_spots:
-                screen.blit(img_hide, (x * CELL_SIZE, y * CELL_SIZE))
+            if (x, y) in alarm_trap:
+                screen.blit(img_TRAP, (x * CELL_SIZE, y * CELL_SIZE))
             # Loot
-            if (x, y) in objects and (x, y) not in looted:
-                screen.blit(img_loot, (x * CELL_SIZE, y * CELL_SIZE))
+            if (x, y) in objects:
+                if (x, y) in looted:
+                    # Draw faded loot (shadow)
+                    shadow = img_loot.copy()
+                    shadow.set_alpha(80)
+                    screen.blit(shadow, (x * CELL_SIZE, y * CELL_SIZE))
+                else:
+                    screen.blit(img_loot, (x * CELL_SIZE, y * CELL_SIZE))
             # Exit
             if (x, y) == exit_pos and collected:
                 screen.blit(img_exit, (x * CELL_SIZE, y * CELL_SIZE))
@@ -177,15 +209,15 @@ def main():
     police_pos = (N-1, N-1)
     exit_pos = (N-1, 0)
     objects = set()
-    hiding_spots = set()
+    alarm_trap = set()
     exclude = {thief_pos, police_pos, exit_pos}
     while len(objects) < NUM_OBJECTS:
         obj = random_empty_cell(exclude)
         objects.add(obj)
         exclude.add(obj)
-    while len(hiding_spots) < NUM_HIDING_SPOTS:
+    while len(alarm_trap) < NUM_alarm_trap:
         h = random_empty_cell(exclude)
-        hiding_spots.add(h)
+        alarm_trap.add(h)
         exclude.add(h)
     collected = False
     running = True
@@ -194,6 +226,11 @@ def main():
     patrol_mode = False
     patrol_path = []
     alert_pulse = 0
+    
+    red_alert_triggered = False
+    game_over_sound_played = False
+    play_music(calm_bgm)
+
 
     while running:
         clock.tick(FPS)
@@ -202,7 +239,7 @@ def main():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
-        draw_board(thief_pos, police_pos, objects, exit_pos, collected, hiding_spots, looted, patrol_mode, alert_pulse)
+        draw_board(thief_pos, police_pos, objects, exit_pos, collected, alarm_trap, looted, patrol_mode, alert_pulse)
         pygame.display.flip()
 
         # --- Thief (user) move ---
@@ -225,17 +262,36 @@ def main():
                     new_thief = (thief_pos[0] + dx, thief_pos[1] + dy)
                     if 0 <= new_thief[0] < N and 0 <= new_thief[1] < N and (dx != 0 or dy != 0):
                         thief_pos = new_thief
+                        # --- Trigger red alert if thief steps on a trap tile ---
+                        if thief_pos in alarm_trap and not patrol_mode:
+                            patrol_mode = True
+                            if not red_alert_triggered:
+                                red_alert_triggered = True
+                                alert_sfx.play()
+                                play_music(alert_bgm)
                         moved = True
                         break
         # Loot collect
         if thief_pos in objects and thief_pos not in looted:
             looted.add(thief_pos)
+            loot_sfx.play()
         if len(looted) == len(objects):
             collected = True
 
         # --- Police (AI) move ---
-        if not patrol_mode and len(looted) > 0:
-            patrol_mode = True  # Police saw a looted object, start chasing
+# Trigger patrol_mode if police is near a looted cell
+        if not patrol_mode:
+            for cell in looted:
+                if police_pos in neighbors(cell) or police_pos == cell:
+                    patrol_mode = True
+                    if not red_alert_triggered:
+                        red_alert_triggered = True
+                        alert_sfx.play()
+                        play_music(alert_bgm)
+                    break
+        elif not patrol_mode and not pygame.mixer.music.get_busy():
+            # Calm music stopped somehow, resume it
+            play_music(calm_bgm)
 
         police_pos, patrol_path = police_ai(police_pos, thief_pos, patrol_mode, patrol_path, looted, objects)
 
@@ -247,12 +303,19 @@ def main():
             win = "Thief"
             running = False
 
-    # End message
-    if win == "Thief":
-        show_message("You Escaped! You Win!", (0, 220, 255))
-    else:
-        show_message("Police Caught You! You Lose!", (255, 60, 60))
-    pygame.time.wait(1000)
+    # End music and sound effects
+    pygame.mixer.music.fadeout(1000)
+    if not game_over_sound_played:
+        if win == "Thief":
+            win_sfx.play()
+            show_message("You Escaped! You Win!", (0, 220, 255))
+        else:
+            lose_sfx.play()
+            show_message("Police Caught You! You Lose!", (255, 60, 60))
+        game_over_sound_played = True
+
+    pygame.time.wait(2000)
+
 
 if __name__ == "__main__":
     while True:
